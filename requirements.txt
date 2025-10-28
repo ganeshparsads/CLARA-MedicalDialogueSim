@@ -1,0 +1,4 @@
+spacy>=3.0
+vosk>=0.3.45
+soundfile>=0.10.3
+numpy>=1.21

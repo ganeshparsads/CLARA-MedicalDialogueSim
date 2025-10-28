@@ -1,0 +1,32 @@
+{
+  "scenario_chest_pain": {
+    "required_concepts": [
+      "chest_pain",
+      "onset_timing",
+      "quality",
+      "severity",
+      "radiation",
+      "shortness_of_breath",
+      "diaphoresis",
+      "nausea_vomiting",
+      "past_medical_history",
+      "family_history",
+      "smoking",
+      "medications"
+    ],
+    "recommended_order": [
+      "chest_pain",
+      "onset_timing",
+      "quality",
+      "severity",
+      "radiation",
+      "shortness_of_breath",
+      "diaphoresis",
+      "nausea_vomiting",
+      "past_medical_history",
+      "medications",
+      "smoking",
+      "family_history"
+    ]
+  }
+}
