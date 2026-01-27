@@ -4,8 +4,10 @@ This module exposes functions to:
 - classify question type (open vs closed)
 - extract clinical concepts from a sentence using keyword lists
 - detect empathy / communication features
+
+Optional LLM integration is available via analyze_utterance_with_llm().
 """
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Any
 import re
 from pathlib import Path
 
@@ -15,6 +17,13 @@ try:
     _SPACY_AVAILABLE = True
 except Exception:
     _SPACY_AVAILABLE = False
+
+try:
+    from .llm import LLMClient
+    _LLM_AVAILABLE = True
+except (ImportError, Exception):
+    _LLM_AVAILABLE = False
+    LLMClient = Any  # type: ignore
 
 # Small keyword-to-concept mapping for chest pain scenario
 _CONCEPT_KEYWORDS = {
@@ -108,3 +117,61 @@ def analyze_utterance(text: str) -> Dict:
     concepts = extract_concepts(text)
     empathy = detect_empathy(text)
     return {"text": text, "type": qtype, "concepts": concepts, "empathy": empathy}
+
+
+def analyze_utterance_with_llm(
+    text: str,
+    client: Optional[LLMClient] = None,
+    use_llm_fallback: bool = False
+) -> Dict:
+    """
+    Analyze a medical utterance using LLM (with rule-based fallback).
+    
+    Args:
+        text: The utterance to analyze
+        client: LLMClient instance. If None, creates one using OPENROUTER_API_KEY env var.
+        use_llm_fallback: If True, falls back to rule-based analysis if LLM fails.
+                         If False, raises exception on LLM failure.
+    
+    Returns:
+        Dict with analysis including text, type, concepts, empathy, and llm_analysis
+    """
+    if not _LLM_AVAILABLE:
+        if use_llm_fallback:
+            return analyze_utterance(text)
+        raise ImportError("LLM integration not available. Install python-dotenv and requests packages or set use_llm_fallback=True.")
+    
+    if client is None:
+        client = LLMClient()
+    
+    try:
+        # Get LLM analysis
+        llm_result = client.analyze_medical_utterance(text)
+        
+        # Get rule-based analysis for comparison
+        rule_analysis = analyze_utterance(text)
+        
+        # Merge results: use LLM concepts if available, fall back to rule-based
+        concepts = llm_result.get("concepts", [])
+        if isinstance(concepts, str):
+            concepts = [c.strip() for c in concepts.split(",")]
+        if not concepts:
+            concepts = rule_analysis.get("concepts", [])
+        
+        qtype = llm_result.get("question_type", rule_analysis.get("type", "unknown"))
+        if qtype not in ["open", "closed", "statement", "unclear"]:
+            qtype = rule_analysis.get("type", qtype)
+        
+        return {
+            "text": text,
+            "type": qtype,
+            "concepts": concepts,
+            "empathy": rule_analysis.get("empathy", False),
+            "llm_analysis": llm_result,
+            "clinical_relevance": llm_result.get("clinical_relevance", "medium"),
+        }
+    except Exception as e:
+        if use_llm_fallback:
+            # Fall back to rule-based analysis
+            return analyze_utterance(text)
+        raise

@@ -1,62 +1,122 @@
 # CLARA Medical Dialogue Simulation (Minimal Prototype)
 
-This repository contains a minimal, self-contained prototype that implements Scenario 1: Initial History Taking and Diagnostic Reasoning. It uses simple, rule-based components to simulate the pipeline:
+This repository contains a minimal, self-contained prototype that implements Scenario 1: Initial History Taking and Diagnostic Reasoning. The pipeline can run in two modes:
 
-- ASR (mock)
-- Medical NLP + concept extraction (rule-based)
-- Semantic alignment engine (compare asked concepts against a small clinical knowledge base)
-- Feedback generator (communication + diagnostic)
+- **Rule-based mode**: Fast, deterministic analysis using pattern matching
+- **LLM-enhanced mode**: Uses OpenRouter models (Deepseek R1 + Qwen3) for intelligent analysis and feedback
+
+## Pipeline Components
+
+- ASR (mock transcription)
+- Medical NLP + concept extraction (rule-based or LLM-enhanced)
+- Semantic alignment engine (compare asked concepts against clinical knowledge base)
+- Feedback generator (communication + diagnostic feedback)
 - Real-time feedback simulation
-- Performance analytics + adaptive learning update (simple JSON profile)
+- Performance analytics + adaptive learning
 
-How to run (quick)
+## Quick Start
 
-Text-only demo (no external models required):
-
+### Run Sample Transcript
 ```bash
-python3 scripts/run_session.py
+python scripts/run_session.py
+```
+You'll be prompted to choose:
+- **Analysis mode**: Rule-based (default) or LLM-enhanced
+- Then processes sample_transcript.txt through the pipeline
+
+### Interactive Session
+```bash
+python scripts/interactive_session.py
+```
+You'll be prompted to choose:
+- **Analysis mode**: Rule-based or LLM-enhanced
+- **Input mode**: Text (type utterances) or Audio (WAV file)
+- Then interactively analyze medical questions
+
+## LLM Integration (Optional)
+
+To enable LLM-powered analysis using Deepseek R1 and Qwen3:
+
+### 1. Setup API Key
+Create a `.env` file in the repository root:
+```
+OPENROUTER_API_KEY=your_api_key_here
 ```
 
-Interactive text session (type utterances, blank line to finish):
+### 2. Get OpenRouter API Key
+Visit [openrouter.ai](https://openrouter.ai) and create a free account.
+- Supports free models including **Deepseek R1** (reasoning) and **Qwen3** (structured outputs)
+- No credit card required for free models
 
+### 3. Run Pipeline in LLM Mode
+When you run either script, select option **2** for LLM-enhanced analysis:
+- **Deepseek R1**: Used for open-ended reasoning and detailed explanations
+- **Qwen3**: Used for structured JSON outputs (medical analysis, feedback, case recommendations)
+
+## Optional Features
+
+### Local ASR with VOSK
+To enable audio transcription without external APIs:
+
+1. Install dependencies:
 ```bash
-python3 scripts/interactive_session.py
-```
-
-Optional: enable local ASR with VOSK
-
-1. Install Python dependencies (recommended in a venv):
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 ```
 
-2. Download a VOSK model and place it under `data/vosk-model` or set the environment variable `VOSK_MODEL_PATH` to the model directory. Example models: https://alphacephei.com/vosk/models
+2. Download a VOSK model from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and extract to `data/vosk-model/`
 
-3. Use the interactive script and choose "audio" mode, then provide a WAV file path (PCM 16k mono) when prompted.
+3. Use interactive script and select audio mode
 
-Notes
-- The prototype uses rule-based NLP by default but will use spaCy if installed to improve parsing.
-- The ASR module falls back to a mock/text mode when VOSK is not available. Real-time microphone capture is not included in this minimal prototype to keep dependencies light.
-
-spaCy (optional enhancement)
-
-To enable improved concept extraction via spaCy's PhraseMatcher:
-
+### spaCy for Enhanced NLP
+For improved medical concept extraction:
 ```bash
 pip install spacy
 python -m spacy download en_core_web_sm
 ```
 
-After installing, the prototype will automatically use spaCy for concept extraction.
+The pipeline will automatically use spaCy if available.
 
+## Architecture
 
-Files created
-- `src/clara/` - package with pipeline modules
-- `scripts/run_session.py` - demo runner
-- `data/clinical_knowledge.json` - small knowledge base
-- `data/sample_transcript.txt` - example student utterances
+```
+User Input
+    ↓
+ASR (mock or VOSK)
+    ↓
+Analysis (Rule-based or LLM)
+    ├─ Rule mode: Pattern matching
+    └─ LLM mode: Qwen3 for structured analysis
+    ↓
+Semantic Alignment
+    ↓
+Feedback Generation
+    ├─ Rule mode: Rule-based feedback
+    └─ LLM mode: Deepseek R1 + Qwen3 for rich feedback
+    ↓
+Post-Encounter Report
+    └─ Analytics, Score, Adaptive Insights
+```
 
-Note: This is a lightweight prototype with no external dependencies.
+## Files
+
+- `src/clara/` - Pipeline modules
+  - `llm.py` - OpenRouter API client
+  - `nlp.py` - NLP analysis (rule-based & LLM)
+  - `semantic.py` - Knowledge base alignment
+  - `feedback.py` - Feedback generation
+  - `adaptive.py` - Case recommendations
+  - `analytics.py` - Scoring & analytics
+  - `asr.py` - ASR integration
+- `scripts/run_session.py` - Process sample transcript
+- `scripts/interactive_session.py` - Interactive mode
+- `data/clinical_knowledge.json` - Knowledge base
+- `data/sample_transcript.txt` - Example utterances
+- `.env` - Configuration (API keys)
+
+## Notes
+
+- Rule-based mode requires no external dependencies (fast startup)
+- LLM mode is optional; gracefully falls back to rule-based if API unavailable
+- All LLM calls include automatic rate-limit retry handling
+- Reasoning models (like Deepseek R1) take time but provide excellent analysis quality

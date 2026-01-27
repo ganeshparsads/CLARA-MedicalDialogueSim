@@ -13,11 +13,12 @@ SRC = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from clara.asr import transcribe
-from clara.nlp import analyze_utterance
+from clara.nlp import analyze_utterance, analyze_utterance_with_llm
 from clara.semantic import align_concepts_to_kb
-from clara.feedback import communication_feedback, diagnostic_feedback
+from clara.feedback import communication_feedback, diagnostic_feedback, enhanced_feedback_with_llm
 from clara.analytics import compute_score
-from clara.adaptive import generate_adaptive_insights
+from clara.adaptive import generate_adaptive_insights, generate_adaptive_insights_with_llm
+from clara.llm import LLMClient
 
 
 def load_transcript(path: Path):
@@ -26,12 +27,23 @@ def load_transcript(path: Path):
     return lines
 
 
-def run_simulation(student_id: str = "student_001"):
+def run_simulation(student_id: str = "student_001", use_llm: bool = False):
     transcript_path = REPO_ROOT / "data" / "sample_transcript.txt"
     utterances = load_transcript(transcript_path)
 
     analyses = []
     asked_concepts_sequence = []
+    
+    # Initialize LLM client if needed
+    llm_client = None
+    if use_llm:
+        try:
+            llm_client = LLMClient()
+            print(f"[LLM Mode] Using {llm_client.model} for reasoning and {llm_client.STRUCTURED_MODEL} for analysis\n")
+        except ValueError as e:
+            print(f"[Warning] LLM not available: {e}")
+            print("Falling back to rule-based analysis\n")
+            use_llm = False
 
     # Real-time rule: if after 4 utterances critical chest pain details are missing, prompt real-time feedback
     for idx, utt in enumerate(utterances, start=1):
@@ -40,7 +52,10 @@ def run_simulation(student_id: str = "student_001"):
         text = asr_out["text"]
 
         # Medical NLP
-        analysis = analyze_utterance(text)
+        if use_llm and llm_client:
+            analysis = analyze_utterance_with_llm(text, client=llm_client, use_llm_fallback=True)
+        else:
+            analysis = analyze_utterance(text)
         analyses.append(analysis)
 
         # track sequence of concepts as they are asked
@@ -57,10 +72,26 @@ def run_simulation(student_id: str = "student_001"):
 
     # Post-encounter processing
     semantic_result = align_concepts_to_kb(asked_concepts_sequence)
-    comm_fb = communication_feedback(analyses)
-    diag_fb = diagnostic_feedback(semantic_result)
+    
+    if use_llm and llm_client:
+        feedback = enhanced_feedback_with_llm(analyses, semantic_result, client=llm_client, use_llm_fallback=True)
+        diag_fb = feedback.get("diagnostic_feedback", {})
+        comm_fb = feedback.get("communication_feedback", {})
+    else:
+        comm_fb = communication_feedback(analyses)
+        diag_fb = diagnostic_feedback(semantic_result)
+    
     score = compute_score(diag_fb, comm_fb)
-    adaptive = generate_adaptive_insights(student_id, diag_fb, comm_fb)
+    
+    if use_llm and llm_client:
+        adaptive = generate_adaptive_insights_with_llm(
+            student_id,
+            diag_fb.get("missing", []),
+            client=llm_client,
+            use_llm_fallback=True
+        )
+    else:
+        adaptive = generate_adaptive_insights(student_id, diag_fb, comm_fb)
 
     # Print report
     print('\n=== Post-Encounter Report ===')
@@ -78,4 +109,21 @@ def run_simulation(student_id: str = "student_001"):
 
 
 if __name__ == '__main__':
-    run_simulation()
+    # Ask user which mode to use
+    print("=" * 70)
+    print("CLARA Medical Dialogue Simulation Pipeline")
+    print("=" * 70)
+    print("\nSelect analysis mode:")
+    print("1. Rule-based (fast, deterministic)")
+    print("2. LLM-enhanced (uses OpenRouter models for better insights)")
+    
+    choice = input("\nEnter choice (1 or 2, default=1): ").strip()
+    use_llm = choice == "2"
+    
+    if use_llm:
+        print("\n[Mode: LLM-Enhanced]")
+    else:
+        print("\n[Mode: Rule-Based]")
+    
+    print()
+    run_simulation(use_llm=use_llm)
