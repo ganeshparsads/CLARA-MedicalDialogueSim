@@ -27,22 +27,22 @@ _BASELINES_PATH = Path(__file__).resolve().parents[1] / "data" / "mimic_baseline
 # ---------------------------------------------------------------------------
 MIMIC_BASELINES = {
     "total_documents":    999,
-    "total_entities":     3866,
-    "avg_entities_per_doc": 3.87,
+    "total_entities":     4395,
+    "avg_entities_per_doc": 4.40,
     "questions":          3.45,   # avg questions per note (prose patterns)
     "hypotheses":         1.04,   # avg hypotheses per note (prose patterns)
-    "confidence_mean":    0.0,    # NER confidence (transformer not yet installed)
-    "high_confidence_pct": 0.0,
-    "entity_types":       {},
+    "confidence_mean":    0.9159, # validated with samrawal/bert-base-uncased_clinical-ner
+    "high_confidence_pct": 73.9,
+    "entity_types":       {"problem": 5595, "treatment": 2978, "test": 478},
     "score_distribution": {
-        "mean":  20.84,
-        "stdev":  9.00,
-        "min":    0.00,
-        "p25":   13.50,
-        "p50":   21.00,
-        "p75":   28.00,
-        "p90":   33.00,
-        "max":   46.00,
+        "mean":  42.79,
+        "stdev":  9.15,
+        "min":   21.40,
+        "p25":   35.70,
+        "p50":   41.90,
+        "p75":   49.50,
+        "p90":   56.00,
+        "max":   70.20,
     },
 }
 
@@ -85,9 +85,10 @@ def compute_score(diagnostic_feedback: Dict, communication_feedback: Dict) -> Di
     comm_score = communication_feedback.get("open_ratio", 0.0)
     total = 0.7 * diag_score + 0.3 * comm_score
 
-    # Derived from MIMIC_BASELINES score_distribution (mean=20.84, stdev=9.0)
-    peer_avg = 0.2084
-    peer_sd  = 0.0900
+    # Derived from MIMIC_BASELINES score_distribution (mean=42.79, stdev=9.15)
+    # computed from 999 MIMIC-IV notes with transformer NER
+    peer_avg = 0.4279
+    peer_sd  = 0.0915
 
     return {"score": round(total, 3), "peer_avg": peer_avg, "peer_sd": peer_sd}
 

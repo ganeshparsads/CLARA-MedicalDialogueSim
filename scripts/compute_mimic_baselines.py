@@ -172,32 +172,42 @@ def main():
         "peer_sd":  round(score_sd  / 100, 4),
     }
 
-    # ── Save JSON ─────────────────────────────────────────────────────────────
+    # ── Save JSON (convert numpy types to native Python for serialization) ────
+    def _to_python(obj):
+        if hasattr(obj, 'item'):   # numpy scalar (float32, int64, etc.)
+            return obj.item()
+        if isinstance(obj, dict):
+            return {k: _to_python(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_to_python(v) for v in obj]
+        return obj
+
     with open(OUT_PATH, "w") as f:
-        json.dump(baselines, f, indent=2)
+        json.dump(_to_python(baselines), f, indent=2)
 
     print(f"\n  ✅ Saved to {OUT_PATH}")
 
-    # ── Print what to paste into analytics.py ────────────────────────────────
+    # ── Print what to paste into analytics.py (use _to_python'd copy) ────────
+    b = _to_python(baselines)
     print(f"\n{'═' * 56}")
     print("  Paste into src/clara/analytics.py:")
     print(f"{'═' * 56}")
     print(f"""
 EXPERT_BASELINES = {{
-    \"total_documents\":    {baselines['total_documents']},
-    \"total_entities\":     {baselines['total_entities']},
-    \"avg_entities_per_doc\": {baselines['avg_entities_per_doc']},
-    \"questions\":          {baselines['questions']},
-    \"hypotheses\":         {baselines['hypotheses']},
-    \"confidence_mean\":    {baselines['confidence_mean']},
-    \"high_confidence_pct\": {baselines['high_confidence_pct']},
-    \"entity_types\":       {baselines['entity_types']},
-    \"score_distribution\": {json.dumps(baselines['score_distribution'])},
+    \"total_documents\":    {b['total_documents']},
+    \"total_entities\":     {b['total_entities']},
+    \"avg_entities_per_doc\": {b['avg_entities_per_doc']},
+    \"questions\":          {b['questions']},
+    \"hypotheses\":         {b['hypotheses']},
+    \"confidence_mean\":    {b['confidence_mean']},
+    \"high_confidence_pct\": {b['high_confidence_pct']},
+    \"entity_types\":       {b['entity_types']},
+    \"score_distribution\": {json.dumps(b['score_distribution'])},
 }}
 
 # In compute_score():
-peer_avg = {baselines['peer_avg']}
-peer_sd  = {baselines['peer_sd']}
+peer_avg = {b['peer_avg']}
+peer_sd  = {b['peer_sd']}
 """)
 
 

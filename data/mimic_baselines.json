@@ -2,26 +2,32 @@
   "_source": "mimic_iv_summarization_test_dataset_shortened.csv",
   "_notes": "Computed by scripts/compute_mimic_baselines.py. Replace EXPERT_BASELINES in analytics.py with these values.",
   "total_documents": 999,
-  "total_entities": 3866,
-  "avg_entities_per_doc": 3.87,
+  "total_entities": 4395,
+  "avg_entities_per_doc": 4.4,
   "questions": 3.45,
   "hypotheses": 1.04,
-  "confidence_mean": 0.0,
-  "high_confidence_pct": 0.0,
-  "entity_types": {},
+  "confidence_mean": 0.9158999919891357,
+  "high_confidence_pct": 73.9,
+  "entity_types": {
+    "problem": 5595,
+    "treatment": 2978,
+    "test": 478
+  },
   "score_distribution": {
-    "mean": 20.84,
-    "stdev": 9.0,
-    "min": 0.0,
-    "p25": 13.5,
-    "p50": 21.0,
-    "p75": 28.0,
-    "p90": 33.0,
-    "max": 46.0
+    "mean": 42.790000915527344,
+    "stdev": 9.15,
+    "min": 21.399999618530273,
+    "p25": 35.70000076293945,
+    "p50": 41.900001525878906,
+    "p75": 49.5,
+    "p90": 56.0,
+    "max": 70.19999694824219
   },
   "grade_distribution": {
-    "F": 999
+    "D": 43,
+    "F": 955,
+    "C": 1
   },
-  "peer_avg": 0.2084,
-  "peer_sd": 0.09
+  "peer_avg": 0.4278999865055084,
+  "peer_sd": 0.0915
 }
