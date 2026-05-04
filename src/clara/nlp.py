@@ -105,8 +105,14 @@ def _ner_entities_to_concepts(entities: List[Dict]) -> List[str]:
     return sorted(found)
 
 
-# --- Reasoning pattern extraction (from VietMed.ipynb enhanced patterns) ---
+# --- Reasoning pattern extraction ---
+# Two pattern sets:
+#   _QUESTION_PATTERNS       — conversational dialogue (VietMed, trainee sessions)
+#   _PROSE_QUESTION_PATTERNS — clinical note prose (MIMIC-IV discharge summaries)
+#   _HYPOTHESIS_PATTERNS     — conversational hypotheses
+#   _PROSE_HYPOTHESIS_PATTERNS — clinical note reasoning (MIMIC-IV)
 
+# Conversational question patterns (VietMed / trainee dialogue)
 _QUESTION_PATTERNS = [
     re.compile(r'(?:did|have|any|do you|have you|are you|is there).*?\?', re.I),
     re.compile(r'(?:assess|evaluate|check|examine).*?(?:\?|for)', re.I),
@@ -116,6 +122,21 @@ _QUESTION_PATTERNS = [
     re.compile(r'(?:symptoms|condition|treatment|medicine).*?\?', re.I),
 ]
 
+# Clinical note prose question patterns (MIMIC-IV discharge summaries)
+# These capture implicit clinical inquiries embedded as prose statements:
+# systematic review findings, section-level clinical assessments
+_PROSE_QUESTION_PATTERNS = [
+    # Systematic review: "denies X", "reports X", "endorses X"
+    re.compile(r'(?:denies|reports|endorses|notes|complains of)\s+[\w\s,]+(?:\.|,)', re.I),
+    # Section headers that represent clinical inquiry
+    re.compile(r'(?:review of systems|ros|physical exam|assessment|chief complaint)\s*[:]\s*[\w\s,]+', re.I),
+    # Negative findings: "no X", "without X"
+    re.compile(r'\bno\s+(?:history of|evidence of|signs of|symptoms of)\s+[\w\s]+(?:\.|,)', re.I),
+    # Temporal inquiry: "onset of X", "duration of X"
+    re.compile(r'(?:onset of|duration of|history of|presenting with)\s+[\w\s,]+(?:\.|,)', re.I),
+]
+
+# Conversational hypothesis patterns (VietMed / trainee dialogue)
 _HYPOTHESIS_PATTERNS = [
     re.compile(r'(?:likely|probably|suspect|think|consider|rule out).*?(?:\.|,)', re.I),
     re.compile(r'differential.*?(?:includes|diagnosis)', re.I),
@@ -126,21 +147,73 @@ _HYPOTHESIS_PATTERNS = [
     re.compile(r'(?:because|since|due to|caused by).*?(?:\.|,)', re.I),
 ]
 
+# Clinical note prose hypothesis patterns (MIMIC-IV discharge summaries)
+# These capture diagnostic reasoning embedded in structured clinical prose
+_PROSE_HYPOTHESIS_PATTERNS = [
+    # Diagnostic conclusions: "consistent with X", "concerning for X"
+    re.compile(r'(?:consistent with|concerning for|suggestive of|findings of)\s+[\w\s,]+(?:\.|,)', re.I),
+    # Causal reasoning: "secondary to X", "in the setting of X", "in the context of X"
+    re.compile(r'(?:secondary to|in the setting of|in the context of|given)\s+[\w\s,]+(?:\.|,)', re.I),
+    # Differential diagnosis
+    re.compile(r'(?:differential|ddx|differential diagnosis)\s*(?:includes|:)\s*[\w\s,]+(?:\.|,)', re.I),
+    # Treatment/plan reasoning: "started on X", "treated with X"
+    re.compile(r'(?:started on|treated with|initiated|continued on|discharged on)\s+[\w\s,]+(?:\.|,)', re.I),
+    # Assessment statements: "impression:", "assessment:"
+    re.compile(r'(?:impression|assessment)\s*:\s*[\w\s,]+(?:\.|,)', re.I),
+    # Diagnostic attribution: "diagnosed with X", "found to have X"
+    re.compile(r'(?:diagnosed with|found to have|noted to have|known to have)\s+[\w\s,]+(?:\.|,)', re.I),
+    # Probabilistic language in notes
+    re.compile(r'(?:likely|probably|suspect|presumed|thought to be)\s+[\w\s,]+(?:\.|,)', re.I),
+    # vs. differential: "X vs Y", "X versus Y"
+    re.compile(r'[\w\s]+\s+(?:vs\.?|versus)\s+[\w\s]+(?:\.|,)', re.I),
+]
+
+
+def _is_prose(text: str) -> bool:
+    """Heuristic: detect clinical note prose vs. conversational dialogue.
+
+    MIMIC discharge notes have section headers and low question-mark density.
+    VietMed / trainee transcripts have direct questions with '?'.
+    """
+    q_count    = text.count('?')
+    word_count = max(len(text.split()), 1)
+    has_headers = bool(re.search(
+        r'(?:chief complaint|history of present illness|assessment|plan|discharge|medications)\s*:',
+        text, re.I
+    ))
+    return has_headers or (q_count / word_count < 0.005)
+
 
 def extract_reasoning_patterns(text: str) -> Dict[str, List[str]]:
+    """Extract clinical reasoning patterns (questions and hypotheses) from text.
+
+    Automatically detects whether the input is conversational dialogue
+    (VietMed / trainee sessions) or clinical note prose (MIMIC-IV discharge
+    summaries) and applies the appropriate pattern set.
+
+    Returns:
+        dict with 'questions' and 'hypotheses' lists, and 'mode' ('dialogue'
+        or 'prose') indicating which pattern set was used.
     """
-    Extract clinical reasoning patterns (questions and hypotheses) from text.
-    Uses enhanced patterns from VietMed.ipynb integration.
-    """
-    questions = []
-    for pat in _QUESTION_PATTERNS:
-        questions.extend(pat.findall(str(text)))
+    text = str(text)
+    prose_mode = _is_prose(text)
+
+    q_patterns = _PROSE_QUESTION_PATTERNS   if prose_mode else _QUESTION_PATTERNS
+    h_patterns = _PROSE_HYPOTHESIS_PATTERNS if prose_mode else _HYPOTHESIS_PATTERNS
+
+    questions  = []
+    for pat in q_patterns:
+        questions.extend(pat.findall(text))
 
     hypotheses = []
-    for pat in _HYPOTHESIS_PATTERNS:
-        hypotheses.extend(pat.findall(str(text)))
+    for pat in h_patterns:
+        hypotheses.extend(pat.findall(text))
 
-    return {"questions": questions, "hypotheses": hypotheses}
+    return {
+        "questions":  questions,
+        "hypotheses": hypotheses,
+        "mode":       "prose" if prose_mode else "dialogue",
+    }
 
 
 # --- Original imports ---

@@ -3,36 +3,91 @@
 Includes:
 - compute_score: original weighted score
 - compute_reasoning_quality_score: VietMed-style 0-100 scoring with A-F grades
-- compare_to_expert_baseline: compare trainee metrics against MIMIC expert baselines
+- compare_to_expert_baseline: compare trainee metrics against expert baselines
 - save_profile_update: persist student progress
+
+Two separate baseline sets:
+  MIMIC_BASELINES  — derived from 999 MIMIC-IV discharge notes via
+                     scripts/compute_mimic_baselines.py. Used for
+                     concept/entity distribution and peer scoring.
+  VIETMED_BASELINES — conversational question/hypothesis counts from
+                      VietMed.ipynb analysis of clinical dialogues.
+                      Used when comparing trainee session transcripts.
 """
 from typing import Dict, List
 import json
 from pathlib import Path
 
-_PROFILE_PATH = Path(__file__).resolve().parents[1] / "data" / "student_profiles.json"
+_PROFILE_PATH   = Path(__file__).resolve().parents[1] / "data" / "student_profiles.json"
+_BASELINES_PATH = Path(__file__).resolve().parents[1] / "data" / "mimic_baselines.json"
 
-# --- Expert baselines from VietMed.ipynb MIMIC-IV analysis ---
-EXPERT_BASELINES = {
-    "total_documents": 500,
-    "total_entities": 4447,
-    "avg_entities_per_doc": 8.89,
-    "questions": 33,
-    "hypotheses": 85,
+# ---------------------------------------------------------------------------
+# MIMIC-IV baselines — computed from 999 discharge notes
+# (scripts/compute_mimic_baselines.py, prose pattern set)
+# ---------------------------------------------------------------------------
+MIMIC_BASELINES = {
+    "total_documents":    999,
+    "total_entities":     3866,
+    "avg_entities_per_doc": 3.87,
+    "questions":          3.45,   # avg questions per note (prose patterns)
+    "hypotheses":         1.04,   # avg hypotheses per note (prose patterns)
+    "confidence_mean":    0.0,    # NER confidence (transformer not yet installed)
+    "high_confidence_pct": 0.0,
+    "entity_types":       {},
+    "score_distribution": {
+        "mean":  20.84,
+        "stdev":  9.00,
+        "min":    0.00,
+        "p25":   13.50,
+        "p50":   21.00,
+        "p75":   28.00,
+        "p90":   33.00,
+        "max":   46.00,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# VietMed conversational baselines — from VietMed.ipynb analysis of clinical
+# dialogues (expert clinicians during patient interviews)
+# ---------------------------------------------------------------------------
+VIETMED_BASELINES = {
+    "questions":  33,     # expert clinician asks ~33 questions per session
+    "hypotheses": 85,     # expert clinician generates ~85 hypotheses per session
     "confidence_mean": 0.9151,
     "high_confidence_pct": 73.6,
     "entity_types": {"problem": 2812, "treatment": 1401, "test": 234},
 }
 
+# Default alias — conversational sessions use VietMed, prose notes use MIMIC
+EXPERT_BASELINES = VIETMED_BASELINES
+
+
+def _load_mimic_baselines() -> Dict:
+    """Load mimic_baselines.json if available, fall back to hardcoded values."""
+    if _BASELINES_PATH.exists():
+        try:
+            with open(_BASELINES_PATH) as f:
+                data = json.load(f)
+            # merge into MIMIC_BASELINES (file is authoritative)
+            return {**MIMIC_BASELINES, **{k: v for k, v in data.items() if not k.startswith("_")}}
+        except Exception:
+            pass
+    return MIMIC_BASELINES
+
 
 def compute_score(diagnostic_feedback: Dict, communication_feedback: Dict) -> Dict:
-    """Original weighted score: 70% diagnostic coverage, 30% open question ratio."""
+    """Original weighted score: 70% diagnostic coverage, 30% open question ratio.
+
+    peer_avg and peer_sd are derived from MIMIC-IV score distribution
+    (converted from 0-100 scale to 0-1 to match coverage/ratio scale).
+    """
     diag_score = diagnostic_feedback.get("coverage", 0.0)
     comm_score = communication_feedback.get("open_ratio", 0.0)
     total = 0.7 * diag_score + 0.3 * comm_score
 
-    peer_avg = 0.72
-    peer_sd = 0.08
+    # Derived from MIMIC_BASELINES score_distribution (mean=20.84, stdev=9.0)
+    peer_avg = 0.2084
+    peer_sd  = 0.0900
 
     return {"score": round(total, 3), "peer_avg": peer_avg, "peer_sd": peer_sd}
 
@@ -43,14 +98,13 @@ def compute_reasoning_quality_score(
     total_entities: int,
     confidence_scores: List[float],
 ) -> Dict:
-    """
-    Comprehensive reasoning quality score (0-100) from VietMed.ipynb integration.
+    """Comprehensive reasoning quality score (0-100) from VietMed.ipynb integration.
 
     Components:
-    - Volume (0-30): number of reasoning elements (questions + hypotheses)
+    - Volume    (0-30): number of reasoning elements (questions + hypotheses)
     - Diversity (0-25): variety in reasoning patterns
-    - Confidence (0-25): average NER confidence
-    - Density (0-20): reasoning elements per entity
+    - Confidence(0-25): average NER confidence
+    - Density   (0-20): reasoning elements per entity
 
     Returns dict with component scores, overall score, and letter grade.
     """
@@ -91,12 +145,12 @@ def compute_reasoning_quality_score(
         grade = "F"
 
     return {
-        "volume_score": round(volume_score, 1),
-        "diversity_score": round(diversity_score, 1),
+        "volume_score":     round(volume_score, 1),
+        "diversity_score":  round(diversity_score, 1),
         "confidence_score": round(confidence_score, 1),
-        "density_score": round(density_score, 1),
-        "overall_score": round(overall, 1),
-        "grade": grade,
+        "density_score":    round(density_score, 1),
+        "overall_score":    round(overall, 1),
+        "grade":            grade,
     }
 
 
@@ -105,34 +159,44 @@ def compare_to_expert_baseline(
     trainee_hypotheses: int,
     trainee_entities: int,
     trainee_confidence: float,
+    mode: str = "dialogue",
 ) -> Dict:
-    """
-    Compare trainee metrics against MIMIC-IV expert baselines (from VietMed.ipynb).
+    """Compare trainee metrics against expert baselines.
+
+    Args:
+        mode: "dialogue" uses VietMed conversational baselines (default,
+              for trainee session transcripts); "prose" uses MIMIC-IV
+              discharge note baselines (for clinical text analysis).
 
     Returns dict with expert metrics, trainee metrics, and advantage ratios.
     """
-    exp = EXPERT_BASELINES
-    q_ratio = exp["questions"] / max(trainee_questions, 1)
-    h_ratio = exp["hypotheses"] / max(trainee_hypotheses, 1)
+    if mode == "prose":
+        exp = _load_mimic_baselines()
+    else:
+        exp = VIETMED_BASELINES
+
+    q_ratio  = exp["questions"]  / max(trainee_questions,  1)
+    h_ratio  = exp["hypotheses"] / max(trainee_hypotheses, 1)
     avg_advantage = (q_ratio + h_ratio) / 2
 
     return {
+        "mode": mode,
         "expert": {
-            "questions": exp["questions"],
-            "hypotheses": exp["hypotheses"],
-            "entities": exp["total_entities"],
-            "confidence": exp["confidence_mean"],
+            "total_questions":  exp["questions"],
+            "total_hypotheses": exp["hypotheses"],
+            "total_entities":   exp.get("total_entities", 0),
+            "confidence":       exp.get("confidence_mean", 0.0),
         },
         "trainee": {
-            "questions": trainee_questions,
-            "hypotheses": trainee_hypotheses,
-            "entities": trainee_entities,
-            "confidence": trainee_confidence,
+            "total_questions":  trainee_questions,
+            "total_hypotheses": trainee_hypotheses,
+            "total_entities":   trainee_entities,
+            "confidence":       trainee_confidence,
         },
         "expert_advantage": {
-            "questions_ratio": round(q_ratio, 1),
-            "hypotheses_ratio": round(h_ratio, 1),
-            "overall": round(avg_advantage, 1),
+            "questions_ratio":  round(q_ratio, 2),
+            "hypotheses_ratio": round(h_ratio, 2),
+            "overall":          round(avg_advantage, 2),
         },
     }
 
